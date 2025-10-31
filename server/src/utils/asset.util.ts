@@ -14,7 +14,7 @@ import { IBulkAsset, ImmichFile, UploadFile, UploadRequest } from 'src/types';
 import { checkAccess } from 'src/utils/access';
 
 export const getAssetFile = (files: AssetFile[], type: AssetFileType | GeneratedImageType) => {
-  return files.find((file) => file.type === type);
+  return files ? files.find((file) => file.type === type) : null;
 };
 
 export const getAssetFiles = (files: AssetFile[]) => ({

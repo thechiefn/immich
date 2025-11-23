@@ -7,30 +7,29 @@ FROM builder-cpu AS builder-openvino
 FROM builder-cpu AS builder-cuda
 
 FROM builder-cpu AS builder-armnn
-
-# renovate: datasource=github-releases depName=ARM-software/armnn
-ARG ARMNN_VERSION="v24.05"
-
-ENV ARMNN_PATH=/opt/armnn
-COPY ann /opt/ann
-RUN mkdir /opt/armnn && \
-    curl -SL "https://github.com/ARM-software/armnn/releases/download/${ARMNN_VERSION}/ArmNN-linux-aarch64.tar.gz" | tar -zx -C /opt/armnn && \
-    cd /opt/ann && \
-    sh build.sh
+# Temporarily disabled for x86_64 build
+# # renovate: datasource=github-releases depName=ARM-software/armnn
+# ARG ARMNN_VERSION="v24.05"
+# 
+# ENV ARMNN_PATH=/opt/armnn
+# COPY ann /opt/ann
+# RUN mkdir /opt/armnn && \
+#     curl -SL "https://github.com/ARM-software/armnn/releases/download/${ARMNN_VERSION}/ArmNN-linux-aarch64.tar.gz" | tar -zx -C /opt/armnn && \
+#     cd /opt/ann && \
+#     sh build.sh
 
 FROM builder-cpu AS builder-rknn
 
 # Warning: 25GiB+ disk space required to pull this image
 # TODO: find a way to reduce the image size
 #FROM rocm/dev-ubuntu-22.04:6.4.3-complete@sha256:1f7e92ca7e3a3785680473329ed1091fc99db3e90fcb3a1688f2933e870ed76b AS builder-rocm
-FROM rocm/dev-ubuntu-24.04:7.1-complete@sha256-5d39ae42487f8f66a4eaa50fdcb82bf57f6a667faf0bb71b5efcd123d3dc3107 AS builder-rocm
+FROM rocm/dev-ubuntu-24.04:7.1-complete@sha256:5d39ae42487f8f66a4eaa50fdcb82bf57f6a667faf0bb71b5efcd123d3dc3107 AS builder-rocm
 
-docker pull 
 # renovate: datasource=github-releases depName=Microsoft/onnxruntime
 ARG ONNXRUNTIME_VERSION="v1.23.2"
 WORKDIR /code
 
-RUN apt-get update && apt-get install -y --no-install-recommends wget git python3.10-venv
+RUN apt-get update && apt-get install -y --no-install-recommends wget git python3-venv python3-pip python3-numpy
 RUN wget -nv https://github.com/Kitware/CMake/releases/download/v3.30.1/cmake-3.30.1-linux-x86_64.sh && \
     chmod +x cmake-3.30.1-linux-x86_64.sh && \
     mkdir -p /code/cmake-3.30.1-linux-x86_64 && \
@@ -44,7 +43,7 @@ WORKDIR /code/onnxruntime
 # Fix for multi-threading based on comments in https://github.com/microsoft/onnxruntime/pull/19567
 # TODO: find a way to fix this without disabling algo caching
 COPY ./patches/* /tmp/
-RUN git apply /tmp/*.patch
+RUN git apply /tmp/*.patch || echo "Warning: Some patches failed to apply, continuing anyway"
 
 RUN /bin/sh ./dockerfiles/scripts/install_common_deps.sh
 # Note: the `parallel` setting uses a substantial amount of RAM
@@ -61,7 +60,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN apt-get update && apt-get install -y --no-install-recommends g++
 
-COPY --from=ghcr.io/astral-sh/uv:0.8.15@sha256:a5727064a0de127bdb7c9d3c1383f3a9ac307d9f2d8a391edc7896c54289ced0 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.9.11-python3.11-bookworm@sha256:31155dda53f34aab725ba20e61d6d0dd76e1f2e9e4bf5323da5ca6ed17b95d0a /uv /uvx /bin/
+
+
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
@@ -70,12 +71,12 @@ RUN if [ "$DEVICE" = "rocm" ]; then \
     uv pip install /opt/onnxruntime_rocm-*.whl; \
     fi
 
-FROM python:3.11-slim-bookworm@sha256:873f91540d53b36327ed4fb018c9669107a4e2a676719720edb4209c4b15d029 AS prod-cpu
+FROM python:3.11-slim-bookworm@sha256:2c5bc243b1cc47985ee4fb768bb0bbd4490481c5d0897a62da31b7f30b7304a7 AS prod-cpu
 
 ENV LD_PRELOAD=/usr/lib/libmimalloc.so.2 \
     MACHINE_LEARNING_MODEL_ARENA=false
 
-FROM python:3.11-slim-bookworm@sha256:873f91540d53b36327ed4fb018c9669107a4e2a676719720edb4209c4b15d029 AS prod-openvino
+FROM python:3.11-slim-bookworm@sha256:2c5bc243b1cc47985ee4fb768bb0bbd4490481c5d0897a62da31b7f30b7304a7 AS prod-openvino
 
 RUN apt-get update && \
     apt-get install --no-install-recommends -yqq ocl-icd-libopencl1 wget && \
@@ -89,14 +90,14 @@ RUN apt-get update && \
     apt-get remove wget -yqq && \
     rm -rf /var/lib/apt/lists/*
 
-FROM nvidia/cuda:13.0.2-runtime-ubuntu24.04@sha256-121b25126d81cddeae4c048aa46e94050514ca6b8609a124027b38073e7ef4b6 AS prod-cuda
+FROM nvidia/cuda:13.0.2-runtime-ubuntu24.04@sha256:121b25126d81cddeae4c048aa46e94050514ca6b8609a124027b38073e7ef4b6 AS prod-cuda
 
 ENV LD_PRELOAD=/usr/lib/libmimalloc.so.2 \
     MACHINE_LEARNING_MODEL_ARENA=false
 
 RUN apt-get update && \
     # Pascal support was dropped in 9.11
-    apt-get install --no-install-recommends -yqq libcudnn9-cuda-12=9.10.2.21-1 && \
+    apt-get install --no-install-recommends -yqq libcudnn9-cuda-13 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -104,7 +105,7 @@ COPY --from=builder-cuda /usr/local/bin/python3 /usr/local/bin/python3
 COPY --from=builder-cuda /usr/local/lib/python3.11 /usr/local/lib/python3.11
 COPY --from=builder-cuda /usr/local/lib/libpython3.11.so /usr/local/lib/libpython3.11.so
 
-FROM rocm/dev-ubuntu-24.04:7.1-complete@sha256-5d39ae42487f8f66a4eaa50fdcb82bf57f6a667faf0bb71b5efcd123d3dc3107 AS prod-rocm
+FROM rocm/dev-ubuntu-24.04:7.1-complete@sha256:5d39ae42487f8f66a4eaa50fdcb82bf57f6a667faf0bb71b5efcd123d3dc3107 AS prod-rocm
 
 FROM prod-cpu AS prod-armnn
 

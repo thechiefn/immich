@@ -22,10 +22,12 @@ FROM builder-cpu AS builder-rknn
 
 # Warning: 25GiB+ disk space required to pull this image
 # TODO: find a way to reduce the image size
-FROM rocm/dev-ubuntu-22.04:6.4.3-complete@sha256:1f7e92ca7e3a3785680473329ed1091fc99db3e90fcb3a1688f2933e870ed76b AS builder-rocm
+#FROM rocm/dev-ubuntu-22.04:6.4.3-complete@sha256:1f7e92ca7e3a3785680473329ed1091fc99db3e90fcb3a1688f2933e870ed76b AS builder-rocm
+FROM rocm/dev-ubuntu-24.04:7.1-complete@sha256-5d39ae42487f8f66a4eaa50fdcb82bf57f6a667faf0bb71b5efcd123d3dc3107 AS builder-rocm
 
+docker pull 
 # renovate: datasource=github-releases depName=Microsoft/onnxruntime
-ARG ONNXRUNTIME_VERSION="v1.20.1"
+ARG ONNXRUNTIME_VERSION="v1.23.2"
 WORKDIR /code
 
 RUN apt-get update && apt-get install -y --no-install-recommends wget git python3.10-venv
